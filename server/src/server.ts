@@ -1,6 +1,6 @@
 import { createApp } from './app.js';
 import { env } from './config/env.js';
-import { dbPool } from './lib/db.js';
+import { prisma } from './lib/prisma.js';
 import { redis } from './lib/redis.js';
 
 const app = createApp();
@@ -16,8 +16,8 @@ async function gracefulShutdown(signal: string) {
   server.close(async () => {
     console.log('HTTP server closed.');
     try {
-      await dbPool.end();
-      console.log('PostgreSQL pool drained.');
+      await prisma.$disconnect();
+      console.log('PostgreSQL Prisma connection disconnected.');
       await redis.quit();
       console.log('Redis connection closed.');
       process.exit(0);

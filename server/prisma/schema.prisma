@@ -1,0 +1,55 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+enum GateStatus {
+  PASS
+  BLOCK
+  MANUAL_REVIEW
+}
+
+model ChecklistRun {
+  id              String       @id @default(uuid())
+  patientId       String       // FHIR logical ID only (e.g. Patient/10293)
+  procedureCpt    String       // CPT procedure code
+  diagnosisSnomed String       // SNOMED CT condition code
+  status          GateStatus
+  checks          Json         // Array of CheckResult objects
+  createdBy       String       // fhirUser identifier (e.g. Practitioner/555)
+  createdAt       DateTime     @default(now())
+
+  auditEvents     AuditEvent[]
+
+  @@index([patientId])
+  @@index([createdAt])
+}
+
+model AuditEvent {
+  id           String        @id @default(uuid())
+  runId        String
+  checklistRun ChecklistRun? @relation(fields: [runId], references: [id], onDelete: Cascade)
+  actor        String        // fhirUser URI
+  action       String        // e.g. SAFETY_GATE_EVALUATION, CLINICIAN_OVERRIDE
+  outcome      String        // e.g. PASS, BLOCKED, OVERRIDDEN
+  detail       Json          // structured metadata (PHI-minimized)
+  timestamp    DateTime      @default(now())
+
+  @@index([runId])
+  @@index([actor])
+  @@index([timestamp])
+}
+
+model TerminologyCache {
+  id         String   @id @default(uuid())
+  codeSystem String   // e.g. http://snomed.info/sct or http://loinc.org
+  code       String
+  display    String
+  cachedAt   DateTime @default(now())
+
+  @@unique([codeSystem, code])
+}
