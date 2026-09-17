@@ -1,0 +1,19 @@
+{
+  "name": "pre-surgical-safety-gate",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Operating Theater (OT) Pre-Surgical Safety Gate (SMART on FHIR)",
+  "workspaces": [
+    "server",
+    "client"
+  ],
+  "scripts": {
+    "dev:server": "npm run dev --workspace=server",
+    "dev:client": "npm run dev --workspace=client",
+    "build:server": "npm run build --workspace=server",
+    "build:client": "npm run build --workspace=client",
+    "docker:up": "docker compose up -d",
+    "docker:down": "docker compose down",
+    "docker:logs": "docker compose logs -f"
+  }
+}
