@@ -72,25 +72,13 @@ The safety engine resolves patient data into 3 deterministic states: `PASS`, `BL
 
 ## Write-Up: Approach, Assumptions & Future Improvements
 
-### 1. Approach
-We designed this safety gate around the **Zero-Trust, Fail-Closed Healthcare Invariant**: software serving the operating theater must never allow a surgical incision based on absent data, unhandled exceptions, or network optimism.
+> Detailed architectural rationale, clinical safety assumptions, and future roadmap are documented in [**`Write-up.md`**](./Write-up.md).
 
-- **BFF Architecture:** Client browsers are untrusted; all FHIR API requests, token exchanges, and clinical rules execute within the Express BFF. Confidential client credentials never touch the frontend.
-- **Fail-Closed Circuit Breakers:** Upstream hospital EHR integrations are wrapped with Opossum circuit breakers. If the EHR API times out, partitions, or crashes, the system fails closed immediately to `BLOCK`, alerting the OR team that automated verification is unavailable.
-- **Atomic Single-Use State:** OAuth PKCE verifiers use Redis `GETDEL` to prevent authorization code replay attacks.
-- **Dual Export Compliance:** Generates both modern USCDI-compliant FHIR R4 `Composition` Document Bundles (LOINC `81218-0`) and legacy HL7 CDA XML documents for broader EHR compatibility.
+- **Approach:** Built around a **Zero-Trust, Fail-Closed Healthcare Invariant**: software serving the operating theater must never allow a surgical incision based on absent data, unhandled exceptions, or network optimism. The Express BFF enforces server-side OAuth2 PKCE verification with atomic Redis `GETDEL`, wraps all FHIR queries in fail-closed Opossum circuit breakers, and executes a deterministic 3-state clinical safety machine.
+- **Assumptions:** Host EHR supports SMART on FHIR launch with PKCE (`S256`); coagulation panel results (Platelets, INR, PT) are clinically valid within a strict 24-hour perioperative window; hard `BLOCK` contraindications (such as penicillin anaphylaxis or absent surgical consent) represent absolute clinical hazards that cannot be overridden in software; cross-origin EHR iframe embedding requires session propagation via `x-session-id` headers alongside cookies.
+- **Future Improvements:** Event-driven SMART CDS Hooks (`order-select`, `patient-view`) to catch safety hazards during surgical scheduling; asymmetric SMART v2 authentication (Private Key JWT / mTLS); dynamic FHIR Terminology Service integration (`$subsumes`); and Bulk FHIR data access (`$export`) to evaluate safety metrics across entire daily operating theater schedules in advance.
 
-### 2. Assumptions Made
-1. **SMART Authorization Flow:** The host EHR supports the SMART App Launch Framework (v1 or v2) with authorization code exchange and PKCE (`S256`).
-2. **Laboratory Recency Window:** A 24-hour cutoff was adopted as the standard perioperative window for coagulation parameters (Platelets, INR, PT). Labs older than 24 hours require human surgical judgment (`MANUAL_REVIEW`).
-3. **Non-Overridable Blocks:** A `BLOCK` indicates a definitive surgical contraindication (e.g., severe penicillin anaphylaxis with beta-lactam prophylaxis, or completely missing surgical consent). These cannot be overridden in software without resolving the clinical conflict.
-4. **Cross-Site Iframe Session Propagation:** Because EHR systems render SMART apps in cross-origin iframes where modern browsers block third-party cookies by default, the app propagates session tokens via custom `x-session-id` headers alongside standard cookies.
-
-### 3. What I Would Improve With More Time
-1. **Event-Driven CDS Hooks:** Implement SMART CDS Hooks (such as `order-select` and `patient-view`) to proactively evaluate safety rules at the moment surgery is scheduled in the EHR, hours or days before the patient reaches the operating room.
-2. **Asymmetric SMART v2 Authentication:** Add support for private key JWT (`client_secret_jwt` / `private_key_jwt`) and mTLS client certificates to satisfy stringent TEFCA and 21st Century Cures Act healthcare security standards.
-3. **FHIR Terminology Service Integration:** Integrate an external FHIR Terminology Service (using `$subsumes` and `$lookup` operations) to dynamically resolve hierarchical SNOMED and LOINC relationships rather than relying solely on local crosswalks.
-4. **FHIR Bulk Data API ($export):** Implement bulk data processing to evaluate pre-surgical safety gates for entire daily operating room slates in advance.
+For full architectural deep dive, see [**`Write-up.md`**](./Write-up.md).
 
 ---
 

@@ -38,8 +38,10 @@ Thumbs.db
 coverage/
 .nyc_output/
 
-# Markdown rule: Ignore all .md files except README.md
+# Markdown rule: Ignore all .md files except README.md and Write-up.md
 *.md
 **/*.md
 !README.md
 !**/README.md
+!Write-up.md
+!WRITE-UP.md
