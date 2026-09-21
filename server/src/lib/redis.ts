@@ -11,11 +11,11 @@ export const redis = new Redis(env.REDIS_URL, {
 });
 
 redis.on('connect', () => {
-  console.log('✅ Redis client connected successfully');
+  console.log('[INFO] Redis client connected successfully');
 });
 
 redis.on('error', (err) => {
-  console.error('❌ Redis client connection error:', err.message);
+  console.error('[ERROR] Redis client connection error:', err.message);
 });
 
 export interface HealthCheckResult {

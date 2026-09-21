@@ -1,9 +1,11 @@
 import express, { type Express, type Request, type Response, type NextFunction } from 'express';
 import cors from 'cors';
+import cookieParser from 'cookie-parser';
 import { env } from './config/env.js';
 import { requestLogger } from './middleware/logger.js';
 import { notFoundHandler } from './middleware/notFound.js';
 import { healthRouter } from './routes/health.routes.js';
+import { authRouter } from './routes/auth.routes.js';
 
 export function createApp(): Express {
   const app = express();
@@ -19,11 +21,17 @@ export function createApp(): Express {
   // Parse JSON payloads
   app.use(express.json());
 
+  // Parse cookies for httpOnly session validation
+  app.use(cookieParser());
+
   // Request logger (PHI-sanitized)
   app.use(requestLogger);
 
   // Health endpoint
   app.use('/health', healthRouter);
+
+  // SMART on FHIR Auth & BFF endpoints
+  app.use('/', authRouter);
 
   // 404 handler
   app.use(notFoundHandler);
