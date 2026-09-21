@@ -2,6 +2,7 @@ import { Router, type Request, type Response } from 'express';
 import { authGuard } from '../middleware/auth.js';
 import { FhirClient } from '../lib/fhirClient.js';
 import { executeSafetyGate, overrideSafetyGate, getSafetyGateRun } from '../lib/safetyGate.js';
+import { generatePreSurgicalDocumentBundle, generatePreSurgicalSummaryHtml } from '../lib/uscdiExport.js';
 
 export const safetyGateRouter = Router();
 
@@ -117,3 +118,63 @@ safetyGateRouter.get('/api/safety-gate/:runId', authGuard, async (req: Request, 
     });
   }
 });
+
+/**
+ * Exports pre-surgical clearance as an official USCDI-compliant FHIR R4 Document Bundle.
+ */
+safetyGateRouter.get('/api/safety-gate/:runId/document/fhir', authGuard, async (req: Request, res: Response): Promise<void> => {
+  const session = req.session;
+  const runId = req.params.runId;
+
+  try {
+    let fhirClient: FhirClient | undefined;
+    if (session?.iss && session?.accessToken) {
+      fhirClient = new FhirClient(session.iss, session.accessToken);
+    }
+
+    const { bundle } = await generatePreSurgicalDocumentBundle({
+      runId,
+      fhirClient,
+      actor: session?.fhirUser || 'Practitioner/unspecified',
+    });
+
+    res.type('application/fhir+json').json(bundle);
+  } catch (err: any) {
+    const statusCode = err.statusCode || 500;
+    res.status(statusCode).json({
+      error: statusCode === 404 ? 'NOT_FOUND' : 'EXPORT_FAILED',
+      message: err.message,
+    });
+  }
+});
+
+/**
+ * Exports pre-surgical clearance as a clean, printable HTML summary.
+ */
+safetyGateRouter.get('/api/safety-gate/:runId/document/html', authGuard, async (req: Request, res: Response): Promise<void> => {
+  const session = req.session;
+  const runId = req.params.runId;
+
+  try {
+    let fhirClient: FhirClient | undefined;
+    if (session?.iss && session?.accessToken) {
+      fhirClient = new FhirClient(session.iss, session.accessToken);
+    }
+
+    const bundleResult = await generatePreSurgicalDocumentBundle({
+      runId,
+      fhirClient,
+      actor: session?.fhirUser || 'Practitioner/unspecified',
+    });
+
+    const html = generatePreSurgicalSummaryHtml(bundleResult);
+    res.type('text/html').send(html);
+  } catch (err: any) {
+    const statusCode = err.statusCode || 500;
+    res.status(statusCode).json({
+      error: statusCode === 404 ? 'NOT_FOUND' : 'EXPORT_FAILED',
+      message: err.message,
+    });
+  }
+});
+

@@ -127,6 +127,33 @@ export interface FhirProcedure {
   performedPeriod?: FhirPeriod;
 }
 
+export interface FhirNarrative {
+  status: 'generated' | 'extensions' | 'additional' | 'empty';
+  div: string;
+}
+
+export interface FhirCompositionSection {
+  title: string;
+  code?: FhirCodeableConcept;
+  text?: FhirNarrative;
+  mode?: string;
+  entry?: FhirReference[];
+  section?: FhirCompositionSection[];
+}
+
+export interface FhirComposition {
+  resourceType: 'Composition';
+  id: string;
+  status: 'preliminary' | 'final' | 'amended' | 'entered-in-error';
+  type: FhirCodeableConcept;
+  category?: FhirCodeableConcept[];
+  subject: FhirReference;
+  date: string;
+  author: FhirReference[];
+  title: string;
+  section: FhirCompositionSection[];
+}
+
 export interface FhirBundle<T> {
   resourceType: 'Bundle';
   type?: string;

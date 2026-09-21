@@ -309,3 +309,6 @@ export async function getSafetyGateRun(runId: string) {
     },
   });
 }
+
+export type ChecklistRunWithAudit = NonNullable<Awaited<ReturnType<typeof getSafetyGateRun>>>;
+
