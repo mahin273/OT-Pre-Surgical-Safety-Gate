@@ -2,7 +2,7 @@ import { Router, type Request, type Response } from 'express';
 import { authGuard } from '../middleware/auth.js';
 import { FhirClient } from '../lib/fhirClient.js';
 import { executeSafetyGate, overrideSafetyGate, getSafetyGateRun } from '../lib/safetyGate.js';
-import { generatePreSurgicalDocumentBundle, generatePreSurgicalSummaryHtml } from '../lib/uscdiExport.js';
+import { generatePreSurgicalDocumentBundle, generatePreSurgicalSummaryHtml, generatePreSurgicalCdaXml } from '../lib/uscdiExport.js';
 
 export const safetyGateRouter = Router();
 
@@ -30,6 +30,26 @@ safetyGateRouter.post('/api/safety-gate/run', authGuard, async (req: Request, re
       actor,
     });
 
+    let patientName = `PATIENT ${session.patientId}`;
+    let patientDob = '';
+    let patientGender = '';
+
+    if (result.clinicalData?.patient) {
+      const p = result.clinicalData.patient;
+      if (p.name && p.name.length > 0) {
+        const n = p.name[0];
+        const family = n.family || '';
+        const given = (n.given || []).join(' ');
+        if (family || given) {
+          patientName = `${family.toUpperCase()}, ${given.toUpperCase()}`.trim();
+        } else if (n.text) {
+          patientName = n.text.toUpperCase();
+        }
+      }
+      if (p.birthDate) patientDob = p.birthDate;
+      if (p.gender) patientGender = p.gender;
+    }
+
     res.json({
       success: true,
       runId: result.run.id,
@@ -37,6 +57,12 @@ safetyGateRouter.post('/api/safety-gate/run', authGuard, async (req: Request, re
       procedureCpt: result.run.procedureCpt,
       diagnosisSnomed: result.run.diagnosisSnomed,
       checks: result.checks,
+      patient: {
+        id: session.patientId,
+        name: patientName,
+        dob: patientDob,
+        gender: patientGender,
+      },
       auditEventId: result.auditEvent.id,
       createdAt: result.run.createdAt,
     });
@@ -178,3 +204,33 @@ safetyGateRouter.get('/api/safety-gate/:runId/document/html', authGuard, async (
   }
 });
 
+
+/**
+ * Exports pre-surgical clearance as a legacy HL7 CDA XML Document.
+ */
+safetyGateRouter.get('/api/safety-gate/:runId/document/cda', authGuard, async (req: Request, res: Response): Promise<void> => {
+  const session = req.session;
+  const runId = req.params.runId;
+
+  try {
+    let fhirClient: FhirClient | undefined;
+    if (session?.iss && session?.accessToken) {
+      fhirClient = new FhirClient(session.iss, session.accessToken);
+    }
+
+    const bundleResult = await generatePreSurgicalDocumentBundle({
+      runId,
+      fhirClient,
+      actor: session?.fhirUser || 'Practitioner/unspecified',
+    });
+
+    const cdaXml = generatePreSurgicalCdaXml(bundleResult);
+    res.type('application/xml').send(cdaXml);
+  } catch (err: any) {
+    const statusCode = err.statusCode || 500;
+    res.status(statusCode).json({
+      error: statusCode === 404 ? 'NOT_FOUND' : 'EXPORT_FAILED',
+      message: err.message,
+    });
+  }
+});

@@ -4,15 +4,15 @@ services:
     container_name: safety-gate-postgres
     restart: unless-stopped
     environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgrespassword
-      POSTGRES_DB: safety_gate
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:-safety_gate}
     ports:
       - "5433:5432"
     volumes:
       - safety_gate_pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -d safety_gate"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-safety_gate}"]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -30,6 +30,45 @@ services:
       interval: 5s
       timeout: 5s
       retries: 5
+
+  server:
+    container_name: safety-gate-server
+    build:
+      context: .
+      dockerfile: server/Dockerfile
+    restart: unless-stopped
+    environment:
+      PORT: ${PORT:-4000}
+      NODE_ENV: ${NODE_ENV:-development}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-safety_gate}
+      REDIS_URL: redis://redis:6379
+      CLIENT_URL: ${CLIENT_URL:-http://localhost:3002}
+      SMART_CLIENT_ID: safety-gate-client
+      BFF_BASE_URL: http://localhost:${PORT:-4000}
+    ports:
+      - "${PORT:-4000}:${PORT:-4000}"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./server/src:/app/server/src
+
+  client:
+    container_name: safety-gate-client
+    build:
+      context: .
+      dockerfile: client/Dockerfile
+    restart: unless-stopped
+    environment:
+      VITE_API_TARGET: http://server:${PORT:-4000}
+    ports:
+      - "3002:3002"
+    depends_on:
+      - server
+    volumes:
+      - ./client/src:/app/client/src
 
 volumes:
   safety_gate_pgdata:

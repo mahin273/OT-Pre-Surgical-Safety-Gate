@@ -237,8 +237,12 @@ async function runVerification(): Promise<void> {
       {
         patientId: testPatientId,
         accessToken: 'mock-token',
+        tokenType: 'Bearer',
+        expiresIn: 300,
+        scope: 'launch/patient patient/*.read openid fhirUser',
         iss: 'https://fhir.example.org',
         fhirUser: 'Practitioner/dr-surgeon-smith',
+        createdAt: Date.now(),
       },
       300
     );

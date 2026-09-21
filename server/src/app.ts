@@ -24,6 +24,9 @@ export function createApp(): Express {
   // Parse JSON payloads
   app.use(express.json());
 
+  // Parse URL-encoded payloads (required for OAuth2 token exchange per RFC 6749)
+  app.use(express.urlencoded({ extended: true }));
+
   // Parse cookies for httpOnly session validation
   app.use(cookieParser());
 

@@ -42,7 +42,7 @@ authRouter.get('/launch', async (req: Request, res: Response): Promise<void> => 
     authUrl.searchParams.set('redirect_uri', `${env.BFF_BASE_URL}/callback`);
     authUrl.searchParams.set(
       'scope',
-      'launch openid fhirUser patient/Patient.rs patient/Condition.rs patient/Observation.rs patient/AllergyIntolerance.rs patient/Consent.rs'
+      'launch launch/patient openid fhirUser patient/*.read patient/Patient.rs patient/Condition.rs patient/Observation.rs patient/AllergyIntolerance.rs patient/Consent.rs'
     );
     authUrl.searchParams.set('state', state);
     authUrl.searchParams.set('aud', iss);
@@ -142,36 +142,68 @@ authRouter.get('/callback', async (req: Request, res: Response): Promise<void> =
     path: '/',
   });
 
-  res.redirect(env.CLIENT_URL);
+  res.redirect(`${env.CLIENT_URL}?sid=${encodeURIComponent(sessionId)}`);
 });
 
 /**
  * Returns sanitized active session metadata to the frontend.
- * The access token is never exposed to the client.
+ * Returns { authenticated: false } when no valid session is present without 401 error.
  */
-authRouter.get('/api/auth/me', authGuard, (req: Request, res: Response): void => {
+authRouter.get('/api/auth/me', async (req: Request, res: Response): Promise<void> => {
+  const sessionId =
+    (req.headers['x-session-id'] as string | undefined) ||
+    (req.query.sid as string | undefined) ||
+    req.cookies?.sid;
+
+  if (!sessionId || typeof sessionId !== 'string') {
+    res.json({ authenticated: false });
+    return;
+  }
+
+  const session = await sessionStore.getSession(sessionId);
+  if (!session) {
+    res.json({ authenticated: false });
+    return;
+  }
+
   res.json({
     authenticated: true,
-    patientId: req.session?.patientId,
-    fhirUser: req.session?.fhirUser,
-    scope: req.session?.scope,
-    expiresIn: req.session?.expiresIn,
+    patientId: session.patientId,
+    fhirUser: session.fhirUser,
+    scope: session.scope,
+    expiresIn: session.expiresIn,
+    iss: session.iss,
   });
 });
 
 /**
  * Logs out the active user, purges Redis session, and deletes the cookie.
+ * Supports both POST and GET (for browser address bar navigation).
  */
-authRouter.post('/api/auth/logout', async (req: Request, res: Response): Promise<void> => {
-  const sid = req.cookies?.sid;
+const handleLogout = async (req: Request, res: Response): Promise<void> => {
+  const sid =
+    (req.headers['x-session-id'] as string | undefined) ||
+    (req.query.sid as string | undefined) ||
+    req.cookies?.sid;
 
   if (sid && typeof sid === 'string') {
     await sessionStore.destroySession(sid);
   }
 
   res.clearCookie('sid', { path: '/' });
+
+  if (req.method === 'GET' && req.accepts('html')) {
+    res.redirect(env.CLIENT_URL);
+    return;
+  }
+
   res.json({
     authenticated: false,
     message: 'Logged out successfully',
   });
-});
+};
+
+authRouter.post('/api/auth/logout', handleLogout);
+authRouter.get('/api/auth/logout', handleLogout);
+authRouter.get('/logout', handleLogout);
+

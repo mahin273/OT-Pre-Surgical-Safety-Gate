@@ -514,3 +514,65 @@ export function generatePreSurgicalSummaryHtml(bundleResult: ExportBundleResult)
 </body>
 </html>`;
 }
+
+/**
+ * Generates an HL7 CDA XML Document (Legacy format) representing the Pre-Surgical Summary.
+ * Follows basic C-CDA structure as referenced by the HL7 CDA Core Repository.
+ */
+export function generatePreSurgicalCdaXml(bundleResult: ExportBundleResult): string {
+  const { run } = bundleResult;
+  const date = new Date(run.createdAt).toISOString().replace(/[-:T\.]/g, '').substring(0, 14);
+
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<ClinicalDocument xmlns="urn:hl7-org:v3" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="urn:hl7-org:v3 CDA.xsd">
+  <realmCode code="US"/>
+  <typeId root="2.16.840.1.113883.1.3" extension="POCD_HD000040"/>
+  <templateId root="2.16.840.1.113883.10.20.22.1.1"/>
+  <id root="2.16.840.1.113883.19.5.99999.1" extension="${run.id}"/>
+  <code code="34751-8" displayName="Preoperative Evaluation and Management Note" codeSystem="2.16.840.1.113883.6.1" codeSystemName="LOINC"/>
+  <title>Pre-Surgical Safety Gate Summary</title>
+  <effectiveTime value="${date}"/>
+  <confidentialityCode code="N" codeSystem="2.16.840.1.113883.5.25"/>
+  <languageCode code="en-US"/>
+  <recordTarget>
+    <patientRole>
+      <id root="2.16.840.1.113883.4.1" extension="${escapeHtml(run.patientId)}"/>
+      <patient>
+        <name>
+          <given>Patient</given>
+          <family>${escapeHtml(run.patientId)}</family>
+        </name>
+      </patient>
+    </patientRole>
+  </recordTarget>
+  <author>
+    <time value="${date}"/>
+    <assignedAuthor>
+      <id root="2.16.840.1.113883.4.6" extension="System"/>
+      <assignedPerson>
+        <name>
+          <family>Safety Gate App</family>
+        </name>
+      </assignedPerson>
+    </assignedAuthor>
+  </author>
+  <component>
+    <structuredBody>
+      <component>
+        <section>
+          <templateId root="2.16.840.1.113883.10.20.22.2.14"/>
+          <code code="10219-4" codeSystem="2.16.840.1.113883.6.1" displayName="Surgical operation note preoperative diagnosis"/>
+          <title>Safety Gate Status</title>
+          <text>
+            <list>
+              <item>Status: ${run.status}</item>
+              <item>Procedure CPT: ${run.procedureCpt}</item>
+              <item>Diagnosis SNOMED: ${run.diagnosisSnomed}</item>
+            </list>
+          </text>
+        </section>
+      </component>
+    </structuredBody>
+  </component>
+</ClinicalDocument>`;
+}
