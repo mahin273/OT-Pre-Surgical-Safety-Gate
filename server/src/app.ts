@@ -7,6 +7,7 @@ import { notFoundHandler } from './middleware/notFound.js';
 import { healthRouter } from './routes/health.routes.js';
 import { authRouter } from './routes/auth.routes.js';
 import { clinicalRouter } from './routes/clinical.routes.js';
+import { safetyGateRouter } from './routes/safetyGate.routes.js';
 
 export function createApp(): Express {
   const app = express();
@@ -36,6 +37,9 @@ export function createApp(): Express {
 
   // Clinical data endpoints
   app.use('/', clinicalRouter);
+
+  // Safety Gate & Audit endpoints
+  app.use('/', safetyGateRouter);
 
   // 404 handler
   app.use(notFoundHandler);
