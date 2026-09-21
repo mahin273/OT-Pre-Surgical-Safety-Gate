@@ -8,7 +8,9 @@
     "build": "tsc",
     "start": "node dist/server.js",
     "prisma:generate": "prisma generate",
-    "prisma:migrate": "prisma migrate dev"
+    "prisma:migrate": "prisma migrate dev",
+    "test": "tsx src/scripts/verify-e2e.ts",
+    "test:e2e": "tsx src/scripts/verify-e2e.ts"
   },
   "dependencies": {
     "@prisma/client": "^6.4.1",

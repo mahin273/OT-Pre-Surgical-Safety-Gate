@@ -520,8 +520,13 @@ export function generatePreSurgicalSummaryHtml(bundleResult: ExportBundleResult)
  * Follows basic C-CDA structure as referenced by the HL7 CDA Core Repository.
  */
 export function generatePreSurgicalCdaXml(bundleResult: ExportBundleResult): string {
-  const { run } = bundleResult;
+  const { run, bundle } = bundleResult;
   const date = new Date(run.createdAt).toISOString().replace(/[-:T\.]/g, '').substring(0, 14);
+
+  const patientEntry = bundle?.entry?.find((e: any) => e.resource?.resourceType === 'Patient');
+  const patientRes = patientEntry?.resource;
+  const patientFamily = patientRes?.name?.[0]?.family || run.patientId;
+  const patientGiven = patientRes?.name?.[0]?.given?.[0] || 'Patient';
 
   return `<?xml version="1.0" encoding="UTF-8"?>
 <ClinicalDocument xmlns="urn:hl7-org:v3" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="urn:hl7-org:v3 CDA.xsd">
@@ -529,7 +534,7 @@ export function generatePreSurgicalCdaXml(bundleResult: ExportBundleResult): str
   <typeId root="2.16.840.1.113883.1.3" extension="POCD_HD000040"/>
   <templateId root="2.16.840.1.113883.10.20.22.1.1"/>
   <id root="2.16.840.1.113883.19.5.99999.1" extension="${run.id}"/>
-  <code code="34751-8" displayName="Preoperative Evaluation and Management Note" codeSystem="2.16.840.1.113883.6.1" codeSystemName="LOINC"/>
+  <code code="81218-0" displayName="Surgical operation note" codeSystem="2.16.840.1.113883.6.1" codeSystemName="LOINC"/>
   <title>Pre-Surgical Safety Gate Summary</title>
   <effectiveTime value="${date}"/>
   <confidentialityCode code="N" codeSystem="2.16.840.1.113883.5.25"/>
@@ -539,8 +544,8 @@ export function generatePreSurgicalCdaXml(bundleResult: ExportBundleResult): str
       <id root="2.16.840.1.113883.4.1" extension="${escapeHtml(run.patientId)}"/>
       <patient>
         <name>
-          <given>Patient</given>
-          <family>${escapeHtml(run.patientId)}</family>
+          <given>${escapeHtml(patientGiven)}</given>
+          <family>${escapeHtml(patientFamily)}</family>
         </name>
       </patient>
     </patientRole>
