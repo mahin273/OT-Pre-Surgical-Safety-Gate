@@ -1,12 +1,13 @@
 import { Router, type Request, type Response } from 'express';
 import { circuitBreakerRegistry } from '../lib/circuitBreaker.js';
+import { authGuard } from '../middleware/auth.js';
 
 export const resilienceRouter = Router();
 
 /**
  * Returns real-time health, state, and telemetry metrics for all registered circuit breakers.
  */
-resilienceRouter.get('/api/resilience/circuits', (_req: Request, res: Response): void => {
+resilienceRouter.get('/api/resilience/circuits', authGuard, (_req: Request, res: Response): void => {
   const circuits = circuitBreakerRegistry.getAllCircuitStates();
 
   res.json({
@@ -19,7 +20,7 @@ resilienceRouter.get('/api/resilience/circuits', (_req: Request, res: Response):
 /**
  * Resets a specific circuit breaker back to CLOSED state (for maintenance/testing).
  */
-resilienceRouter.post('/api/resilience/circuits/:name/reset', (req: Request, res: Response): void => {
+resilienceRouter.post('/api/resilience/circuits/:name/reset', authGuard, (req: Request, res: Response): void => {
   const name = req.params.name;
   const breaker = circuitBreakerRegistry.getBreaker(name);
 

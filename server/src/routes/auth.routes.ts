@@ -56,9 +56,11 @@ authRouter.get('/launch', async (req: Request, res: Response): Promise<void> => 
     res.redirect(authUrl.toString());
   } catch (err: any) {
     console.error('[ERROR] SMART EHR launch initiation failed:', err.message);
-    res.status(502).json({
-      error: 'EHR_DISCOVERY_FAILED',
-      message: 'Failed to fetch SMART configuration',
+    const isValidationError =
+      err.message?.includes('forbidden') || err.message?.includes('Invalid') || err.message?.includes('protocol');
+    res.status(isValidationError ? 400 : 502).json({
+      error: isValidationError ? 'INVALID_ISS_URL' : 'EHR_DISCOVERY_FAILED',
+      message: err.message || 'Failed to fetch SMART configuration',
     });
   }
 });
@@ -152,7 +154,6 @@ authRouter.get('/callback', async (req: Request, res: Response): Promise<void> =
 authRouter.get('/api/auth/me', async (req: Request, res: Response): Promise<void> => {
   const sessionId =
     (req.headers['x-session-id'] as string | undefined) ||
-    (req.query.sid as string | undefined) ||
     req.cookies?.sid;
 
   if (!sessionId || typeof sessionId !== 'string') {
@@ -183,7 +184,6 @@ authRouter.get('/api/auth/me', async (req: Request, res: Response): Promise<void
 const handleLogout = async (req: Request, res: Response): Promise<void> => {
   const sid =
     (req.headers['x-session-id'] as string | undefined) ||
-    (req.query.sid as string | undefined) ||
     req.cookies?.sid;
 
   if (sid && typeof sid === 'string') {

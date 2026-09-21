@@ -41,6 +41,18 @@ export function evaluateAllergies(
   }
 
   for (const allergy of allergies) {
+    const vCode = allergy.verificationStatus?.coding?.[0]?.code?.toLowerCase() ||
+      allergy.verificationStatus?.text?.toLowerCase();
+    if (vCode === 'refuted' || vCode === 'entered-in-error') {
+      continue;
+    }
+
+    const cCode = allergy.clinicalStatus?.coding?.[0]?.code?.toLowerCase() ||
+      allergy.clinicalStatus?.text?.toLowerCase();
+    if (cCode === 'inactive' || cCode === 'resolved') {
+      continue;
+    }
+
     const codings = allergy.code?.coding || [];
     const allergyText = (allergy.code?.text || '').toLowerCase();
     const criticality = allergy.criticality;

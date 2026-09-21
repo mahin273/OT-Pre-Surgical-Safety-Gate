@@ -98,6 +98,7 @@ safetyGateRouter.post('/api/safety-gate/:runId/override', authGuard, async (req:
       runId,
       actor,
       reason,
+      patientId: session?.patientId,
     });
 
     res.json({
@@ -119,10 +120,11 @@ safetyGateRouter.post('/api/safety-gate/:runId/override', authGuard, async (req:
  * Retrieves a checklist run along with its complete, immutable audit trail.
  */
 safetyGateRouter.get('/api/safety-gate/:runId', authGuard, async (req: Request, res: Response): Promise<void> => {
+  const session = req.session;
   const runId = req.params.runId;
 
   try {
-    const run = await getSafetyGateRun(runId);
+    const run = await getSafetyGateRun(runId, session?.patientId);
 
     if (!run) {
       res.status(404).json({
@@ -137,10 +139,10 @@ safetyGateRouter.get('/api/safety-gate/:runId', authGuard, async (req: Request, 
       run,
     });
   } catch (err: any) {
-    console.error('[ERROR] Failed to fetch checklist run:', err.message);
-    res.status(500).json({
-      error: 'FETCH_RUN_FAILED',
-      message: 'Failed to retrieve checklist run details',
+    const statusCode = err.statusCode || 500;
+    res.status(statusCode).json({
+      error: statusCode === 404 ? 'NOT_FOUND' : (statusCode === 403 ? 'FORBIDDEN' : 'FETCH_RUN_FAILED'),
+      message: err.message || 'Failed to retrieve checklist run details',
     });
   }
 });
@@ -162,13 +164,14 @@ safetyGateRouter.get('/api/safety-gate/:runId/document/fhir', authGuard, async (
       runId,
       fhirClient,
       actor: session?.fhirUser || 'Practitioner/unspecified',
+      patientId: session?.patientId,
     });
 
     res.type('application/fhir+json').json(bundle);
   } catch (err: any) {
     const statusCode = err.statusCode || 500;
     res.status(statusCode).json({
-      error: statusCode === 404 ? 'NOT_FOUND' : 'EXPORT_FAILED',
+      error: statusCode === 404 ? 'NOT_FOUND' : (statusCode === 403 ? 'FORBIDDEN' : 'EXPORT_FAILED'),
       message: err.message,
     });
   }
@@ -191,6 +194,7 @@ safetyGateRouter.get('/api/safety-gate/:runId/document/html', authGuard, async (
       runId,
       fhirClient,
       actor: session?.fhirUser || 'Practitioner/unspecified',
+      patientId: session?.patientId,
     });
 
     const html = generatePreSurgicalSummaryHtml(bundleResult);
@@ -198,7 +202,7 @@ safetyGateRouter.get('/api/safety-gate/:runId/document/html', authGuard, async (
   } catch (err: any) {
     const statusCode = err.statusCode || 500;
     res.status(statusCode).json({
-      error: statusCode === 404 ? 'NOT_FOUND' : 'EXPORT_FAILED',
+      error: statusCode === 404 ? 'NOT_FOUND' : (statusCode === 403 ? 'FORBIDDEN' : 'EXPORT_FAILED'),
       message: err.message,
     });
   }
@@ -222,6 +226,7 @@ safetyGateRouter.get('/api/safety-gate/:runId/document/cda', authGuard, async (r
       runId,
       fhirClient,
       actor: session?.fhirUser || 'Practitioner/unspecified',
+      patientId: session?.patientId,
     });
 
     const cdaXml = generatePreSurgicalCdaXml(bundleResult);
@@ -229,7 +234,7 @@ safetyGateRouter.get('/api/safety-gate/:runId/document/cda', authGuard, async (r
   } catch (err: any) {
     const statusCode = err.statusCode || 500;
     res.status(statusCode).json({
-      error: statusCode === 404 ? 'NOT_FOUND' : 'EXPORT_FAILED',
+      error: statusCode === 404 ? 'NOT_FOUND' : (statusCode === 403 ? 'FORBIDDEN' : 'EXPORT_FAILED'),
       message: err.message,
     });
   }

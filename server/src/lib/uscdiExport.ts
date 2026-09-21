@@ -43,8 +43,9 @@ export async function generatePreSurgicalDocumentBundle(params: {
   runId: string;
   fhirClient?: FhirClient;
   actor?: string;
+  patientId?: string;
 }): Promise<ExportBundleResult> {
-  const run = await getSafetyGateRun(params.runId);
+  const run = await getSafetyGateRun(params.runId, params.patientId);
 
   if (!run) {
     const err: any = new Error(`ChecklistRun with ID "${params.runId}" not found`);
@@ -145,7 +146,7 @@ export async function generatePreSurgicalDocumentBundle(params: {
       overrideEvent.timestamp.toISOString()
     )}</p>`;
     safetyNarrative += `<p><strong>Medical Justification:</strong> ${escapeHtml(
-      detail.overrideReason || 'Not specified'
+      detail.reason || detail.overrideReason || 'Not specified'
     )}</p>`;
     safetyNarrative += `</div>`;
   }
@@ -487,7 +488,9 @@ export function generatePreSurgicalSummaryHtml(bundleResult: ExportBundleResult)
           <p><strong>Overriding Clinician:</strong> ${escapeHtml(overrideEvent.actor)}</p>
           <p><strong>Override Timestamp:</strong> ${escapeHtml(overrideEvent.timestamp.toISOString())}</p>
           <p><strong>Clinical Reason:</strong> ${escapeHtml(
-            (overrideEvent.detail as any)?.overrideReason || 'None recorded'
+            (overrideEvent.detail as any)?.reason ||
+              (overrideEvent.detail as any)?.overrideReason ||
+              'None recorded'
           )}</p>
         </div>`
       : ''
@@ -570,9 +573,9 @@ export function generatePreSurgicalCdaXml(bundleResult: ExportBundleResult): str
           <title>Safety Gate Status</title>
           <text>
             <list>
-              <item>Status: ${run.status}</item>
-              <item>Procedure CPT: ${run.procedureCpt}</item>
-              <item>Diagnosis SNOMED: ${run.diagnosisSnomed}</item>
+              <item>Status: ${escapeHtml(run.status)}</item>
+              <item>Procedure CPT: ${escapeHtml(run.procedureCpt)}</item>
+              <item>Diagnosis SNOMED: ${escapeHtml(run.diagnosisSnomed)}</item>
             </list>
           </text>
         </section>

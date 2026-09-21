@@ -22,7 +22,6 @@ export async function authGuard(
 ): Promise<void> {
   const sid =
     (req.headers['x-session-id'] as string | undefined) ||
-    (req.query.sid as string | undefined) ||
     req.cookies?.sid;
 
   if (!sid || typeof sid !== 'string') {

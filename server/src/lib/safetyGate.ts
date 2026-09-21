@@ -234,6 +234,7 @@ export async function overrideSafetyGate(params: {
   runId: string;
   actor: string;
   reason: string;
+  patientId?: string;
 }): Promise<SafetyGateOverrideResult> {
   const cleanReason = (params.reason || '').trim();
   if (cleanReason.length < 5) {
@@ -250,6 +251,14 @@ export async function overrideSafetyGate(params: {
     throw notFoundError;
   }
 
+  if (params.patientId && existingRun.patientId !== params.patientId) {
+    const forbiddenError: any = new Error(
+      'Access denied: Checklist run does not belong to active patient context'
+    );
+    forbiddenError.statusCode = 403;
+    throw forbiddenError;
+  }
+
   if (existingRun.status === GateStatus.BLOCK) {
     const blockError: any = new Error('Safety violation: Cannot override a run in BLOCK status. Surgical contraindication must be resolved clinically.');
     blockError.statusCode = 400;
@@ -264,6 +273,18 @@ export async function overrideSafetyGate(params: {
 
   // Atomic override transaction: update run status to PASS and append CLINICAL_OVERRIDE audit event
   const [updatedRun, auditEvent] = await prisma.$transaction(async (tx) => {
+    const current = await tx.checklistRun.findUnique({
+      where: { id: params.runId },
+    });
+
+    if (!current || current.status !== GateStatus.MANUAL_REVIEW) {
+      const conflictError: any = new Error(
+        'Safety violation: Checklist run is not in MANUAL_REVIEW status or was already modified.'
+      );
+      conflictError.statusCode = 400;
+      throw conflictError;
+    }
+
     const run = await tx.checklistRun.update({
       where: { id: params.runId },
       data: {
@@ -298,9 +319,10 @@ export async function overrideSafetyGate(params: {
 
 /**
  * Retrieves a ChecklistRun along with its complete, immutable audit event trail.
+ * Validates patient context when expectedPatientId is provided to enforce tenant boundary.
  */
-export async function getSafetyGateRun(runId: string) {
-  return await prisma.checklistRun.findUnique({
+export async function getSafetyGateRun(runId: string, expectedPatientId?: string) {
+  const run = await prisma.checklistRun.findUnique({
     where: { id: runId },
     include: {
       auditEvents: {
@@ -308,6 +330,14 @@ export async function getSafetyGateRun(runId: string) {
       },
     },
   });
+
+  if (run && expectedPatientId && run.patientId !== expectedPatientId) {
+    const err: any = new Error('Access denied: Checklist run does not belong to active patient context');
+    err.statusCode = 403;
+    throw err;
+  }
+
+  return run;
 }
 
 export type ChecklistRunWithAudit = NonNullable<Awaited<ReturnType<typeof getSafetyGateRun>>>;

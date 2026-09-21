@@ -8,6 +8,8 @@ import { circuitBreakerRegistry } from '../lib/circuitBreaker.js';
 
 interface UpstreamMockOptions {
   includePenicillinAllergy?: boolean;
+  refutedPenicillinAllergy?: boolean;
+  failAllergyQuery?: boolean;
   missingLabs?: boolean;
   staleLabs?: boolean;
 }
@@ -223,6 +225,46 @@ function startUpstreamFhirServer(initialOptions: UpstreamMockOptions = {}): Prom
 
       // 9. Allergy Intolerance Screen
       if (url.pathname === '/AllergyIntolerance') {
+        if (opts.failAllergyQuery) {
+          res.writeHead(500, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: 'internal_error', message: 'Allergy database connection refused' }));
+          return;
+        }
+
+        if (opts.refutedPenicillinAllergy) {
+          res.writeHead(200, { 'Content-Type': 'application/fhir+json' });
+          res.end(
+            JSON.stringify({
+              resourceType: 'Bundle',
+              total: 1,
+              entry: [
+                {
+                  resource: {
+                    resourceType: 'AllergyIntolerance',
+                    id: 'all-refuted',
+                    verificationStatus: {
+                      coding: [
+                        {
+                          system: 'http://terminology.hl7.org/CodeSystem/allergyintolerance-verification',
+                          code: 'refuted',
+                        },
+                      ],
+                    },
+                    criticality: 'high',
+                    code: {
+                      coding: [
+                        { system: 'http://www.nlm.nih.gov/research/umls/rxnorm', code: '70618', display: 'Penicillin' },
+                      ],
+                      text: 'Childhood rash evaluated and refuted by allergist',
+                    },
+                  },
+                },
+              ],
+            })
+          );
+          return;
+        }
+
         if (opts.includePenicillinAllergy) {
           res.writeHead(200, { 'Content-Type': 'application/fhir+json' });
           res.end(
@@ -340,7 +382,7 @@ async function runE2ETests(): Promise<void> {
       headers: { 'x-session-id': sessionId },
     });
     assert.strictEqual(meRes.status, 200, 'Expected 200 from /api/auth/me');
-    const meData = await meRes.json();
+    const meData = (await meRes.json()) as any;
     assert.strictEqual(meData.authenticated, true, 'User session must report authenticated: true');
     assert.strictEqual(meData.patientId, 'pat-e2e-001', 'Session must hold correct patientId');
     console.log('-> [PASS] SMART on FHIR OAuth handshake verified (session created and authenticated).');
@@ -358,7 +400,7 @@ async function runE2ETests(): Promise<void> {
       },
     });
     assert.strictEqual(runRes.status, 200, 'Expected 200 OK from /api/safety-gate/run');
-    const runData = await runRes.json();
+    const runData = (await runRes.json()) as any;
 
     assert.strictEqual(runData.success, true, 'Safety gate run must report success');
     assert.strictEqual(runData.status, 'PASS', 'Expected terminal GateStatus to be PASS');
@@ -392,7 +434,7 @@ async function runE2ETests(): Promise<void> {
       headers: { 'x-session-id': sessionId },
     });
     assert.strictEqual(fhirDocRes.status, 200, 'Expected 200 from FHIR document export');
-    const fhirBundle = await fhirDocRes.json();
+    const fhirBundle = (await fhirDocRes.json()) as any;
     assert.strictEqual(fhirBundle.resourceType, 'Bundle', 'Root export must be a FHIR Bundle');
     assert.strictEqual(fhirBundle.type, 'document', 'Bundle type must be document');
     assert.strictEqual(fhirBundle.entry[0].resource.resourceType, 'Composition', 'Entry[0] must be Composition');
@@ -431,7 +473,7 @@ async function runE2ETests(): Promise<void> {
       },
     });
     assert.strictEqual(allergyRunRes.status, 200, 'Expected 200 OK from /api/safety-gate/run');
-    const allergyRunData = await allergyRunRes.json();
+    const allergyRunData = (await allergyRunRes.json()) as any;
 
     assert.strictEqual(allergyRunData.status, 'BLOCK', 'Expected terminal GateStatus to be BLOCK');
     const allergyCheck = allergyRunData.checks.find((c: any) => c.name === 'allergy');
@@ -457,7 +499,7 @@ async function runE2ETests(): Promise<void> {
         'x-session-id': sessionId,
       },
     });
-    const reviewRunData = await reviewRunRes.json();
+    const reviewRunData = (await reviewRunRes.json()) as any;
     assert.strictEqual(reviewRunData.status, 'MANUAL_REVIEW', 'Stale labs (>24h) must yield MANUAL_REVIEW');
 
     // B. Attempt override with blank reason (Must be rejected)
@@ -482,7 +524,7 @@ async function runE2ETests(): Promise<void> {
       body: JSON.stringify({ reason: overrideReason }),
     });
     assert.strictEqual(overrideRes.status, 200, 'Expected 200 OK from override');
-    const overrideData = await overrideRes.json();
+    const overrideData = (await overrideRes.json()) as any;
     assert.strictEqual(overrideData.status, 'PASS', 'Status must transition to PASS upon override');
 
     // Verify audit log has 2 events (Initial evaluation + Override)
@@ -493,13 +535,172 @@ async function runE2ETests(): Promise<void> {
     assert.ok(overriddenRun, 'ChecklistRun must exist');
     assert.strictEqual(overriddenRun.auditEvents.length, 2, 'Must record 2 audit events');
     assert.strictEqual(overriddenRun.auditEvents[1].action, 'CLINICAL_OVERRIDE', 'Second audit action must be CLINICAL_OVERRIDE');
-    assert.strictEqual(overriddenRun.auditEvents[1].detail.reason, overrideReason, 'Audit detail must preserve exact reason');
+    assert.strictEqual((overriddenRun.auditEvents[1].detail as any)?.reason, overrideReason, 'Audit detail must preserve exact reason');
     console.log('-> [PASS] Manual review triggered, blank override rejected, valid override audited.');
 
     // --------------------------------------------------------------------------
-    // TEST 6: FAIL-CLOSED RESILIENCE UNDER UPSTREAM NETWORK OUTAGE
+    // TEST 6: BOLA / IDOR TENANT ISOLATION (SEC-01)
     // --------------------------------------------------------------------------
-    console.log('\n[TEST 6] Testing Fail-Closed Resilience During Upstream Network Partition...');
+    console.log('\n[TEST 6] Testing Multi-Tenant Boundary (BOLA/IDOR Prevention)...');
+
+    // Create session for Patient B (different tenant context)
+    const sessionBId = 'session-tenant-b-intruder';
+    await sessionStore.createSession(
+      sessionBId,
+      {
+        accessToken: 'token-tenant-b',
+        tokenType: 'Bearer',
+        expiresIn: 3600,
+        patientId: 'pat-e2e-002-other',
+        fhirUser: 'Practitioner/dr-intruder',
+        scope: 'launch patient/*.read',
+        iss: upstream.baseUrl,
+        createdAt: Date.now(),
+      },
+      3600
+    );
+
+    // Attempt A: Patient B attempts to retrieve Patient A's run details -> 403 Forbidden
+    const bolaGetRes = await fetch(`${appBase}/api/safety-gate/${runData.runId}`, {
+      headers: { 'x-session-id': sessionBId },
+    });
+    assert.strictEqual(bolaGetRes.status, 403, 'Cross-patient run retrieval must return HTTP 403');
+
+    // Attempt B: Patient B attempts to override Patient A's pending review run -> 403 Forbidden
+    const bolaOverrideRes = await fetch(`${appBase}/api/safety-gate/${reviewRunData.runId}/override`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-session-id': sessionBId,
+      },
+      body: JSON.stringify({ reason: 'Unauthorized malicious override attempt' }),
+    });
+    assert.strictEqual(bolaOverrideRes.status, 403, 'Cross-patient override attempt must return HTTP 403');
+
+    // Attempt C: Patient B attempts to export Patient A's FHIR document -> 403 Forbidden
+    const bolaExportRes = await fetch(`${appBase}/api/safety-gate/${runData.runId}/document/fhir`, {
+      headers: { 'x-session-id': sessionBId },
+    });
+    assert.strictEqual(bolaExportRes.status, 403, 'Cross-patient FHIR export must return HTTP 403');
+    console.log('-> [PASS] BOLA/IDOR attacks rejected with HTTP 403 Forbidden.');
+
+    // --------------------------------------------------------------------------
+    // TEST 7: CLINICAL OVERRIDE REASON PRESERVATION IN EXPORTS (BUG-01)
+    // --------------------------------------------------------------------------
+    console.log('\n[TEST 7] Testing Medical Justification Preservation in Document Exports...');
+
+    // Fetch FHIR export for the overridden run from Test 5
+    const overriddenFhirRes = await fetch(`${appBase}/api/safety-gate/${reviewRunData.runId}/document/fhir`, {
+      headers: { 'x-session-id': sessionId },
+    });
+    assert.strictEqual(overriddenFhirRes.status, 200, 'Expected 200 from overridden FHIR export');
+    const overriddenBundle = (await overriddenFhirRes.json()) as any;
+    const fhirNarrative = overriddenBundle.entry[0].resource.section[0].text.div;
+    assert.ok(
+      fhirNarrative.includes('ROTEM bedside viscoelastic assay'),
+      'FHIR Composition narrative must preserve clinical override justification'
+    );
+
+    // Fetch HTML export for the overridden run
+    const overriddenHtmlRes = await fetch(`${appBase}/api/safety-gate/${reviewRunData.runId}/document/html`, {
+      headers: { 'x-session-id': sessionId },
+    });
+    assert.strictEqual(overriddenHtmlRes.status, 200, 'Expected 200 from overridden HTML export');
+    const overriddenHtml = await overriddenHtmlRes.text();
+    assert.ok(
+      overriddenHtml.includes('ROTEM bedside viscoelastic assay'),
+      'HTML document summary must display clinical override justification'
+    );
+    console.log('-> [PASS] Clinical override justification verified in both FHIR and HTML exports.');
+
+    // --------------------------------------------------------------------------
+    // TEST 8: CLINICAL INGESTION FAIL-CLOSED ON ALLERGY QUERY DROP (CLIN-01)
+    // --------------------------------------------------------------------------
+    console.log('\n[TEST 8] Testing Fail-Closed on Critical Allergy Query Failure...');
+    upstream.setOptions({
+      failAllergyQuery: true,
+      includePenicillinAllergy: false,
+      refutedPenicillinAllergy: false,
+      missingLabs: false,
+      staleLabs: false,
+    });
+
+    const allergyFailRes = await fetch(`${appBase}/api/safety-gate/run`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-session-id': sessionId,
+      },
+    });
+    assert.strictEqual(allergyFailRes.status, 200, 'Expected 200 OK from /api/safety-gate/run');
+    const allergyFailData = (await allergyFailRes.json()) as any;
+    assert.strictEqual(
+      allergyFailData.status,
+      'BLOCK',
+      'EHR query failure on AllergyIntolerance must fail-closed to BLOCK'
+    );
+    assert.ok(
+      allergyFailData.checks.some((c: any) => c.name === 'ehr_availability' && !c.passed),
+      'Must contain failing ehr_availability check item'
+    );
+    console.log('-> [PASS] Allergy subsystem failure correctly triggered fail-closed BLOCK.');
+
+    // --------------------------------------------------------------------------
+    // TEST 9: REFUTED ALLERGY HANDLING (CLIN-04)
+    // --------------------------------------------------------------------------
+    console.log('\n[TEST 9] Testing Refuted Allergy Evaluation (Avoid False-Positive Block)...');
+    upstream.setOptions({
+      failAllergyQuery: false,
+      refutedPenicillinAllergy: true,
+      includePenicillinAllergy: false,
+      missingLabs: false,
+      staleLabs: false,
+    });
+
+    const refutedRunRes = await fetch(`${appBase}/api/safety-gate/run`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-session-id': sessionId,
+      },
+    });
+    assert.strictEqual(refutedRunRes.status, 200, 'Expected 200 OK from /api/safety-gate/run');
+    const refutedRunData = (await refutedRunRes.json()) as any;
+    assert.strictEqual(refutedRunData.status, 'PASS', 'Refuted childhood allergy must not block surgery');
+    const allergyCheckResult = refutedRunData.checks.find((c: any) => c.name === 'allergy');
+    assert.strictEqual(allergyCheckResult.passed, true, 'Allergy check must pass for refuted records');
+    console.log('-> [PASS] Refuted allergy correctly evaluated as safe.');
+
+    // --------------------------------------------------------------------------
+    // TEST 10: SSRF PREVENTION ON EHR LAUNCH (SEC-02)
+    // --------------------------------------------------------------------------
+    console.log('\n[TEST 10] Testing SSRF Defense on /launch Endpoint...');
+
+    const ssrfRes1 = await fetch(`${appBase}/launch?iss=http://169.254.169.254/latest/meta-data`);
+    assert.strictEqual(ssrfRes1.status, 400, 'Cloud metadata IP must be rejected with 400 Bad Request');
+
+    const ssrfRes2 = await fetch(`${appBase}/launch?iss=ftp://malicious-host.internal/fhir`);
+    assert.strictEqual(ssrfRes2.status, 400, 'Non-HTTP protocol must be rejected with 400 Bad Request');
+    console.log('-> [PASS] SSRF attempts blocked with HTTP 400 Bad Request.');
+
+    // --------------------------------------------------------------------------
+    // TEST 11: UNAUTHENTICATED RESILIENCE / CIRCUIT BREAKER ENDPOINTS (SEC-03)
+    // --------------------------------------------------------------------------
+    console.log('\n[TEST 11] Testing Resilience Admin Endpoint Authentication Boundary...');
+
+    const unauthCircuitReset = await fetch(`${appBase}/api/resilience/circuits/fhirClient/reset`, {
+      method: 'POST',
+    });
+    assert.strictEqual(unauthCircuitReset.status, 401, 'Unauthenticated circuit reset must return 401');
+
+    const unauthCircuitGet = await fetch(`${appBase}/api/resilience/circuits`);
+    assert.strictEqual(unauthCircuitGet.status, 401, 'Unauthenticated circuit telemetry get must return 401');
+    console.log('-> [PASS] Unauthenticated access to circuit breaker admin routes blocked.');
+
+    // --------------------------------------------------------------------------
+    // TEST 12: FAIL-CLOSED RESILIENCE UNDER UPSTREAM NETWORK OUTAGE
+    // --------------------------------------------------------------------------
+    console.log('\n[TEST 12] Testing Fail-Closed Resilience During Upstream Network Partition...');
 
     // Close upstream server to simulate network crash
     await new Promise<void>((res) => upstream.server.close(() => res()));
@@ -512,7 +713,7 @@ async function runE2ETests(): Promise<void> {
         'x-session-id': sessionId,
       },
     });
-    const outageRunData = await outageRunRes.json();
+    const outageRunData = (await outageRunRes.json()) as any;
 
     assert.strictEqual(outageRunData.status, 'BLOCK', 'Must fail-closed to BLOCK during network outage');
     const ehrCheck = outageRunData.checks.find((c: any) => c.name === 'ehr_availability');
@@ -521,9 +722,9 @@ async function runE2ETests(): Promise<void> {
     console.log('-> [PASS] System successfully failed-closed to BLOCK during upstream outage.');
 
     // --------------------------------------------------------------------------
-    // TEST 7: AUTHENTICATION BOUNDARY ENFORCEMENT
+    // TEST 13: AUTHENTICATION BOUNDARY ENFORCEMENT
     // --------------------------------------------------------------------------
-    console.log('\n[TEST 7] Testing Security Boundary (Reject Unauthenticated Requests)...');
+    console.log('\n[TEST 13] Testing Security Boundary (Reject Unauthenticated Requests)...');
 
     const unauthRes = await fetch(`${appBase}/api/safety-gate/run`, {
       method: 'POST',
@@ -533,7 +734,7 @@ async function runE2ETests(): Promise<void> {
     console.log('-> [PASS] Unauthenticated access blocked.');
 
     console.log('\n================================================================');
-    console.log('ALL END-TO-END INTEGRATION TESTS PASSED SUCCESSFULLY (7/7)');
+    console.log('ALL END-TO-END INTEGRATION TESTS PASSED SUCCESSFULLY (13/13)');
     console.log('================================================================');
   } finally {
     // Teardown

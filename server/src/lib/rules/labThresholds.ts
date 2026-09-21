@@ -27,22 +27,35 @@ function findObservationByLoinc(
   observations: FhirObservation[],
   targetLoinc: string
 ): FhirObservation | undefined {
-  return observations.find((obs) => {
+  const matches = observations.filter((obs) => {
     const codings = obs.code?.coding || [];
     return codings.some(
       (c) => c.code === targetLoinc || (c.system?.includes('loinc.org') && c.code === targetLoinc)
     );
   });
+
+  if (matches.length === 0) {
+    return undefined;
+  }
+
+  // Sort descending by effective date / issued date so latest lab is evaluated
+  matches.sort((a, b) => {
+    const timeA = Date.parse(a.effectiveDateTime || a.issued || '') || 0;
+    const timeB = Date.parse(b.effectiveDateTime || b.issued || '') || 0;
+    return timeB - timeA;
+  });
+
+  return matches[0];
 }
 
 function getObservationAgeHours(obs: FhirObservation, now: number): number {
   const dateStr = obs.effectiveDateTime || obs.issued;
   if (!dateStr) {
-    return 0; // If no date, treat as current for testing unless explicit
+    return Number.POSITIVE_INFINITY;
   }
   const timestamp = Date.parse(dateStr);
   if (isNaN(timestamp)) {
-    return 0;
+    return Number.POSITIVE_INFINITY;
   }
   const diffMs = Math.max(0, now - timestamp);
   return diffMs / (1000 * 60 * 60);

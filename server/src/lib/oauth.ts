@@ -46,10 +46,52 @@ export function generatePkce(): PkcePair {
 }
 
 /**
+ * Validates the SMART EHR issuer URL to prevent Server-Side Request Forgery (SSRF).
+ */
+export function validateIssUrl(iss: string): void {
+  let parsed: URL;
+  try {
+    parsed = new URL(iss);
+  } catch {
+    throw new Error('Invalid EHR issuer URL');
+  }
+
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+    throw new Error('EHR issuer must use HTTP or HTTPS protocol');
+  }
+
+  const hostname = parsed.hostname.toLowerCase();
+
+  // Prohibit link-local and cloud metadata endpoints in all environments
+  if (
+    hostname === '169.254.169.254' ||
+    hostname.startsWith('169.254.') ||
+    hostname === 'metadata.google.internal'
+  ) {
+    throw new Error('Access to cloud metadata IP addresses is forbidden');
+  }
+
+  // Prohibit private RFC 1918 subnets and localhost in production
+  if (process.env.NODE_ENV === 'production') {
+    if (
+      hostname === 'localhost' ||
+      hostname === '127.0.0.1' ||
+      hostname === '::1' ||
+      hostname.startsWith('10.') ||
+      hostname.startsWith('192.168.') ||
+      /^172\.(1[6-9]|2[0-9]|3[0-1])\./.test(hostname)
+    ) {
+      throw new Error('Private or loopback IP ranges are forbidden as EHR issuers in production');
+    }
+  }
+}
+
+/**
  * Discovers SMART OAuth authorization and token endpoints for an EHR FHIR server.
  * First checks .well-known/smart-configuration, then falls back to /metadata CapabilityStatement.
  */
 export async function discoverEndpoints(iss: string): Promise<SmartEndpoints> {
+  validateIssUrl(iss);
   const cleanIss = iss.replace(/\/+$/, '');
   const wellKnownUrl = `${cleanIss}/.well-known/smart-configuration`;
 

@@ -21,6 +21,16 @@ export function createApp(): Express {
     })
   );
 
+  // Security Headers: Prevent MIME-sniffing and restrict iframe framing to authorized EHR origins
+  app.use((_req: Request, res: Response, next: NextFunction) => {
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader(
+      'Content-Security-Policy',
+      "frame-ancestors 'self' https://*.smarthealthit.org http://localhost:* http://127.0.0.1:*"
+    );
+    next();
+  });
+
   // Parse JSON payloads
   app.use(express.json());
 

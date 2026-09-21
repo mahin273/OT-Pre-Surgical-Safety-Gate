@@ -182,7 +182,7 @@ export interface AggregatedClinicalData {
  * and fault-tolerant parallel clinical data querying via Promise.allSettled.
  */
 export class FhirClient {
-  private baseUrl: string;
+  public readonly baseUrl: string;
   private accessToken: string;
   private timeoutMs: number;
 
@@ -319,6 +319,18 @@ export class FhirClient {
     if (patientResult.status === 'rejected') {
       throw new Error(
         `Failed to reach FHIR EHR for patient ${cleanId}: ${patientResult.reason?.message || 'EHR connection failed'}`
+      );
+    }
+
+    if (allergiesResult.status === 'rejected') {
+      throw new Error(
+        `Failed to fetch critical AllergyIntolerance records for patient ${cleanId}: ${allergiesResult.reason?.message || 'Query failed'}`
+      );
+    }
+
+    if (observationsResult.status === 'rejected') {
+      throw new Error(
+        `Failed to fetch critical Observation laboratory records for patient ${cleanId}: ${observationsResult.reason?.message || 'Query failed'}`
       );
     }
 

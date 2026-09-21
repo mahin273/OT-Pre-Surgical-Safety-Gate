@@ -163,6 +163,21 @@ export class CircuitBreakerRegistry {
 export const circuitBreakerRegistry = new CircuitBreakerRegistry();
 
 /**
+ * Resolves the circuit breaker registry key based on the FHIR EHR hostname.
+ */
+export function getCircuitBreakerKey(fhirClient: FhirClient): string {
+  try {
+    const host = new URL(fhirClient.baseUrl).host;
+    if (host) {
+      return `fhirClient:${host}`;
+    }
+  } catch {
+    // Fallback if URL cannot be parsed
+  }
+  return 'fhirClient';
+}
+
+/**
  * Executes EHR FHIR queries through the managed fhirClient circuit breaker with fail-closed fallback.
  */
 export async function fetchClinicalDataWithCircuitBreaker(
@@ -170,8 +185,16 @@ export async function fetchClinicalDataWithCircuitBreaker(
   patientId: string,
   customOptions?: Partial<CircuitBreaker.Options>
 ): Promise<AggregatedClinicalData> {
+  let breakerName = getCircuitBreakerKey(fhirClient);
+  if (
+    circuitBreakerRegistry.getBreaker('fhirClient') &&
+    !circuitBreakerRegistry.getBreaker(breakerName)
+  ) {
+    breakerName = 'fhirClient';
+  }
+
   const breaker = circuitBreakerRegistry.register<[FhirClient, string], AggregatedClinicalData>(
-    'fhirClient',
+    breakerName,
     (client: FhirClient, pid: string) => client.fetchAllClinicalData(pid),
     customOptions
   );
