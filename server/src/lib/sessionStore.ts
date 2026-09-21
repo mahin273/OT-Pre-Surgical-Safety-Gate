@@ -16,6 +16,7 @@ export interface UserSessionData {
   fhirUser?: string;
   scope: string;
   idToken?: string;
+  iss?: string;
   createdAt: number;
 }
 

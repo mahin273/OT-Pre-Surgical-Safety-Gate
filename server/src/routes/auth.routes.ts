@@ -128,6 +128,7 @@ authRouter.get('/callback', async (req: Request, res: Response): Promise<void> =
       fhirUser: tokenResponse.fhirUser,
       scope: tokenResponse.scope || '',
       idToken: tokenResponse.id_token,
+      iss: pkce.iss,
       createdAt: Date.now(),
     },
     expiresIn

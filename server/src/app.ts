@@ -6,6 +6,7 @@ import { requestLogger } from './middleware/logger.js';
 import { notFoundHandler } from './middleware/notFound.js';
 import { healthRouter } from './routes/health.routes.js';
 import { authRouter } from './routes/auth.routes.js';
+import { clinicalRouter } from './routes/clinical.routes.js';
 
 export function createApp(): Express {
   const app = express();
@@ -32,6 +33,9 @@ export function createApp(): Express {
 
   // SMART on FHIR Auth & BFF endpoints
   app.use('/', authRouter);
+
+  // Clinical data endpoints
+  app.use('/', clinicalRouter);
 
   // 404 handler
   app.use(notFoundHandler);
