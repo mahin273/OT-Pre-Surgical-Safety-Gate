@@ -72,13 +72,7 @@ The safety engine resolves patient data into 3 deterministic states: `PASS`, `BL
 
 ## Write-Up: Approach, Assumptions & Future Improvements
 
-> Detailed architectural rationale, clinical safety assumptions, and future roadmap are documented in [**`Write-up.md`**](./Write-up.md).
-
-- **Approach:** Built around a **Zero-Trust, Fail-Closed Healthcare Invariant**: software serving the operating theater must never allow a surgical incision based on absent data, unhandled exceptions, or network optimism. The Express BFF enforces server-side OAuth2 PKCE verification with atomic Redis `GETDEL`, wraps all FHIR queries in fail-closed Opossum circuit breakers, and executes a deterministic 3-state clinical safety machine.
-- **Assumptions:** Host EHR supports SMART on FHIR launch with PKCE (`S256`); coagulation panel results (Platelets, INR, PT) are clinically valid within a strict 24-hour perioperative window; hard `BLOCK` contraindications (such as penicillin anaphylaxis or absent surgical consent) represent absolute clinical hazards that cannot be overridden in software; cross-origin EHR iframe embedding requires session propagation via `x-session-id` headers alongside cookies.
-- **Future Improvements:** Event-driven SMART CDS Hooks (`order-select`, `patient-view`) to catch safety hazards during surgical scheduling; asymmetric SMART v2 authentication (Private Key JWT / mTLS); dynamic FHIR Terminology Service integration (`$subsumes`); and Bulk FHIR data access (`$export`) to evaluate safety metrics across entire daily operating theater schedules in advance.
-
-For full architectural deep dive, see [**`Write-up.md`**](./Write-up.md).
+Detailed architectural rationale, clinical safety assumptions, and future roadmap are documented in [Write-up.md](https://github.com/mahin273/OT-Pre-Surgical-Safety-Gate/blob/main/Write-up.md).
 
 ---
 
