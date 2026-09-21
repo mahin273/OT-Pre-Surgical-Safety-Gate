@@ -3,7 +3,7 @@ import { env } from '../config/env.js';
 
 // Domain model interfaces
 export interface CheckResult {
-  name: 'diagnosis_procedure_match' | 'consent' | 'labs' | 'allergy';
+  name: 'diagnosis_procedure_match' | 'consent' | 'labs' | 'allergy' | 'ehr_availability';
   passed: boolean;
   detail: string; // human-readable, PHI-minimized
 }

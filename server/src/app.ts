@@ -8,6 +8,7 @@ import { healthRouter } from './routes/health.routes.js';
 import { authRouter } from './routes/auth.routes.js';
 import { clinicalRouter } from './routes/clinical.routes.js';
 import { safetyGateRouter } from './routes/safetyGate.routes.js';
+import { resilienceRouter } from './routes/resilience.routes.js';
 
 export function createApp(): Express {
   const app = express();
@@ -40,6 +41,9 @@ export function createApp(): Express {
 
   // Safety Gate & Audit endpoints
   app.use('/', safetyGateRouter);
+
+  // Resilience & Circuit Breaker monitoring endpoints
+  app.use('/', resilienceRouter);
 
   // 404 handler
   app.use(notFoundHandler);

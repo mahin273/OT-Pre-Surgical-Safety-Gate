@@ -145,6 +145,8 @@ export interface AggregatedClinicalData {
   consents: FhirConsent[];
   procedures: (FhirServiceRequest | FhirProcedure)[];
   fetchedAt: number;
+  degraded?: boolean;
+  degradedReason?: string;
 }
 
 /**
@@ -285,6 +287,12 @@ export class FhirClient {
           check.res.reason?.message || check.res.reason
         );
       }
+    }
+
+    if (patientResult.status === 'rejected') {
+      throw new Error(
+        `Failed to reach FHIR EHR for patient ${cleanId}: ${patientResult.reason?.message || 'EHR connection failed'}`
+      );
     }
 
     return {

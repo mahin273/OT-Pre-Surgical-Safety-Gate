@@ -1,6 +1,7 @@
 import { prisma, GateStatus, type CheckResult } from './prisma.js';
 import { FhirClient, type AggregatedClinicalData } from './fhirClient.js';
 import { evaluateClinicalRules } from './rules/ruleEngine.js';
+import { fetchClinicalDataWithCircuitBreaker } from './circuitBreaker.js';
 
 export interface SafetyGateRunResult {
   run: {
@@ -57,6 +58,12 @@ export function calculateGateStatus(checks: CheckResult[]): GateStatus {
     }
 
     const detail = check.detail.toLowerCase();
+
+    // 0. Fail-Closed Circuit Breaker / EHR unavailability -> Hard BLOCK
+    if (check.name === 'ehr_availability') {
+      hasBlock = true;
+      continue;
+    }
 
     // 1. Consent missing or inactive -> Hard BLOCK
     if (check.name === 'consent') {
@@ -148,9 +155,29 @@ export async function executeSafetyGate(params: {
   fhirClient: FhirClient;
   actor: string;
 }): Promise<SafetyGateRunResult> {
-  const clinicalData = await params.fhirClient.fetchAllClinicalData(params.patientId);
-  const evaluation = await evaluateClinicalRules(clinicalData);
-  const gateStatus = calculateGateStatus(evaluation.checks);
+  const clinicalData = await fetchClinicalDataWithCircuitBreaker(
+    params.fhirClient,
+    params.patientId
+  );
+
+  let checks: CheckResult[];
+  let gateStatus: GateStatus;
+  let allPassed = false;
+
+  if (clinicalData.degraded) {
+    const degradedCheck: CheckResult = {
+      name: 'ehr_availability',
+      passed: false,
+      detail: `[FAIL-CLOSED] Upstream EHR FHIR service unavailable or circuit breaker is OPEN: ${clinicalData.degradedReason || 'Network outage'}`,
+    };
+    checks = [degradedCheck];
+    gateStatus = GateStatus.BLOCK;
+  } else {
+    const evaluation = await evaluateClinicalRules(clinicalData);
+    checks = evaluation.checks;
+    allPassed = evaluation.allPassed;
+    gateStatus = calculateGateStatus(checks);
+  }
 
   const procedureCpt = extractPrimaryCpt(clinicalData);
   const diagnosisSnomed = extractPrimarySnomed(clinicalData);
@@ -163,7 +190,7 @@ export async function executeSafetyGate(params: {
         procedureCpt,
         diagnosisSnomed,
         status: gateStatus,
-        checks: evaluation.checks as any,
+        checks: checks as any,
         createdBy: params.actor,
       },
     });
@@ -173,12 +200,14 @@ export async function executeSafetyGate(params: {
         runId: createdRun.id,
         actor: params.actor,
         action: 'GATE_EVALUATION',
-        outcome: gateStatus,
+        outcome: clinicalData.degraded ? 'FAIL_CLOSED_BLOCK' : gateStatus,
         detail: {
-          checks: evaluation.checks,
-          allPassed: evaluation.allPassed,
+          checks,
+          allPassed,
           procedureCpt,
           diagnosisSnomed,
+          degraded: !!clinicalData.degraded,
+          degradedReason: clinicalData.degradedReason,
         } as any,
       },
     });
@@ -192,7 +221,7 @@ export async function executeSafetyGate(params: {
       checks: run.checks as unknown as CheckResult[],
     },
     auditEvent,
-    checks: evaluation.checks,
+    checks,
     clinicalData,
   };
 }
